@@ -1,50 +1,40 @@
-# On importe les outils dont on a besoin
-# Flask = le serveur web
-# Response = pour envoyer du JavaScript
-# CORS = permet au site HTML d'appeler ce serveur
-# datetime = pour la date et l'heure
-# requests = pour appeler l'API OpenAI
-# os = pour lire les variables d'environnement (clé API)
+# -*- coding: utf-8 -*-
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from datetime import datetime
 import requests
 import os
 
-# On crée l'application Flask
 app = Flask(__name__)
 CORS(app)
 
-# On lit la clé API depuis les variables d'environnement de Render
-# Elle n'est jamais écrite dans le code — c'est pour ça qu'elle est sécurisée
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
-# ── LISTE DE VOS CLIENTS ──────────────────────────────────────────
-# Pour ajouter un nouveau client, copiez un bloc et changez les infos
-# client_id = l'identifiant unique utilisé dans le lien d'installation
 CLIENTS = {
     "uio": {
         "nom": "Assistant UIO",
         "couleur": "#7c5cfc",
-        "system_prompt": "system_prompt": """Tu es l'assistant IA de UIO Automatisation, une entreprise québécoise spécialisée en chatbots IA et sites web pour les petites entreprises.
-MESSAGE D'ACCUEIL : À la toute première interaction présente-toi ainsi :
-'Bonjour ! Je suis l'assistant IA de UIO 👋 Je peux vous aider à découvrir nos services, obtenir une estimation de prix, ou répondre à vos questions. Par où voulez-vous commencer ?'
-NOS SERVICES ET TARIFS :
-- Site web personnalisé : 100$ à 400$ (setup) + 20$ à 40$/mois. Comprend des mises à jour fréquentes et des ajustements selon les demandes du client.
-- Chatbot IA personnalisé : 250$ à 600$ (setup) + 35$ à 60$/mois. Chatbot intelligent intégré sur le site du client, disponible 24/7.
-COMPORTEMENT :
-- Réponds en français, de façon concise et chaleureuse (2-3 phrases max)
-- À la fin de chaque réponse, propose toujours une action suivante. Ex : 'Voulez-vous une estimation pour votre projet ?' ou 'Je peux vous expliquer comment fonctionne l'installation, cela vous intéresse ?'
-- Guide subtilement le client vers une prise de contact ou un devis
-- Si le client hésite, mets en valeur le rapport qualité-prix et la disponibilité 24/7
-CONTACT : Pour tout devis précis ou question complexe, invite à écrire à uio.automatisationia@gmail.com ou sur Instagram @uio.automation"""
+        "system_prompt": (
+            "Tu es l'assistant IA de UIO Automatisation, une entreprise quebecoise specialisee en chatbots IA et sites web pour les petites entreprises.\n\n"
+            "MESSAGE D'ACCUEIL : A la toute premiere interaction presente-toi ainsi : "
+            "Bonjour ! Je suis l'assistant IA de UIO. Je peux vous aider a decouvrir nos services, obtenir une estimation de prix, ou repondre a vos questions. Par ou voulez-vous commencer ?\n\n"
+            "NOS SERVICES ET TARIFS :\n"
+            "- Site web personnalise : 100$ a 400$ (setup) + 20$ a 40$/mois. Comprend des mises a jour frequentes et des ajustements selon les demandes du client.\n"
+            "- Chatbot IA personnalise : 250$ a 600$ (setup) + 35$ a 60$/mois. Chatbot intelligent integre sur le site du client, disponible 24/7.\n\n"
+            "COMPORTEMENT :\n"
+            "- Reponds en francais, de facon concise et chaleureuse (2-3 phrases max)\n"
+            "- A la fin de chaque reponse, propose toujours une action suivante. Ex : Voulez-vous une estimation pour votre projet ? ou Je peux vous expliquer comment fonctionne l'installation, cela vous interesse ?\n"
+            "- Guide subtilement le client vers une prise de contact ou un devis\n"
+            "- Si le client hesite, mets en valeur le rapport qualite-prix et la disponibilite 24/7\n\n"
+            "CONTACT : Pour tout devis precis, invite a ecrire a uio.automatisationia@gmail.com ou sur Instagram @uio.automation"
+        )
     },
     "demo": {
         "nom": "Assistant Demo",
         "couleur": "#1D9E75",
-        "system_prompt": "Tu es un assistant de démonstration pour UIO Automatisation. Montre les capacités du chatbot de façon professionnelle. Réponds en français."
+        "system_prompt": "Tu es un assistant de demonstration pour UIO Automatisation. Montre les capacites du chatbot de facon professionnelle. Reponds en francais."
     }
-    # Exemple de futur client :
+    # Pour ajouter un client :
     # "restaurant_mario": {
     #     "nom": "Assistant Mario",
     #     "couleur": "#e74c3c",
@@ -52,32 +42,17 @@ CONTACT : Pour tout devis précis ou question complexe, invite à écrire à uio
     # }
 }
 
-
-# ── ROUTE D'ACCUEIL ───────────────────────────────────────────────
-# C'est juste une page qui dit "je suis vivant"
-# UptimeRobot ping cette URL toutes les 5 minutes
-# Sans ça, UptimeRobot pensait que le serveur était mort
 @app.route("/")
 def home():
     return "UIO Backend actif"
 
-
-# ── ROUTE PRINCIPALE DU CHAT ──────────────────────────────────────
-# C'est ici que les messages des visiteurs arrivent
-# et qu'on les envoie à OpenAI
 @app.route("/chat", methods=["POST"])
 def chat():
-    # On lit les données envoyées par le chatbot
     data = request.json
     messages = data.get("messages", [])
-
-    # On identifie quel client envoie la requête
-    # Si on ne reconnaît pas le client, on utilise "uio" par défaut
     client_id = data.get("client_id", "uio")
     client = CLIENTS.get(client_id, CLIENTS["uio"])
 
-    # Limite de 20 messages par conversation
-    # Protège contre les abus et les coûts excessifs
     if len(messages) > 20:
         return jsonify({
             "choices": [{
@@ -87,17 +62,12 @@ def chat():
             }]
         })
 
-    # On ajoute automatiquement la date et l'heure au prompt
-    # Comme ça le chatbot sait toujours quelle heure il est
     now = datetime.now().strftime("%A %d %B %Y, %H:%M")
     system = {
         "role": "system",
         "content": client["system_prompt"] + "\n\nDate et heure actuelle : " + now
     }
 
-    # On envoie le tout à OpenAI
-    # gpt-4o-mini = moins cher, presque aussi bon que gpt-4o
-    # max_tokens = longueur maximale de la réponse
     response = requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers={
@@ -112,25 +82,14 @@ def chat():
     )
     return jsonify(response.json())
 
-
-# ── ROUTE DU WIDGET JAVASCRIPT ────────────────────────────────────
-# C'est ici que la magie opère !
-# Quand un site client charge le script, cette route génère
-# le JavaScript personnalisé avec les bonnes couleurs et le bon nom
 @app.route("/chatbot.js")
 def chatbot_js():
-    # On lit l'identifiant client dans l'URL
-    # ex: /chatbot.js?client=restaurant_mario
     client_id = request.args.get("client", "uio")
     client = CLIENTS.get(client_id, CLIENTS["uio"])
     couleur = client["couleur"]
     nom = client["nom"]
-
-    # L'URL du serveur — utilisée par le widget pour envoyer les messages
     backend = request.host_url.rstrip("/")
 
-    # Le JavaScript qui sera injecté dans le site du client
-    # Ce code crée le bouton 💬 et la fenêtre de chat
     js = """
 (function() {
   var CLIENT_ID = '""" + client_id + """';
@@ -157,7 +116,7 @@ def chatbot_js():
 
   var btn = document.createElement('button');
   btn.id = 'uio-btn';
-  btn.textContent = '💬';
+  btn.textContent = '\u{1F4AC}';
   document.body.appendChild(btn);
 
   var box = document.createElement('div');
@@ -204,13 +163,12 @@ def chatbot_js():
       history.push({role:'assistant', content:reply});
     } catch(e) {
       typing.remove();
-      addBubble('Erreur de connexion. Veuillez réessayer.', 'bot');
+      addBubble('Erreur de connexion. Veuillez reessayer.', 'bot');
     }
   }
 })();
 """
     return Response(js, mimetype="application/javascript")
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
