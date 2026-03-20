@@ -139,13 +139,13 @@ def chatbot_js():
     box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
   };
 
-  function suggClick(btn) {
+  window.suggClick = function(btn) {
     var text = btn.textContent;
     var sugg = document.getElementById('uio-suggestions');
     if (sugg) sugg.remove();
     document.getElementById('uio-input').value = text;
     sendMsg();
-  }
+  };
 
   function addBubble(text, role) {
     var d = document.createElement('div');
