@@ -6,6 +6,8 @@
   <title>UIO Automation - Chatbots IA & Sites Web</title>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
   <style>
+    .chat-sugg { background:transparent; border:1px solid var(--blue); color:var(--blue); border-radius:20px; padding:6px 14px; font-size:12px; cursor:pointer; text-align:left; transition:all .2s; }
+.chat-sugg:hover { background:var(--blue); color:#fff; }
     :root {
       --dark:    #0d1b2a;
       --dark2:   #0f2033;
@@ -225,6 +227,11 @@
     </div>
     <div class="chat-messages" id="chat-messages">
       <div class="bubble bot">Bonjour ! Je suis l'assistant IA de UIO. Comment puis-je vous aider aujourd'hui ?</div>
+      <div id="chat-suggestions" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+  <button class="chat-sugg" onclick="suggFixeClick(this)">Nos services</button>
+  <button class="chat-sugg" onclick="suggFixeClick(this)">Nos tarifs</button>
+  <button class="chat-sugg" onclick="suggFixeClick(this)">Comment ca marche ?</button>
+</div>
     </div>
     <div class="chat-input-row">
       <input type="text" id="chat-input" placeholder="Ecrivez votre message..." />
@@ -327,7 +334,13 @@
   }
 
   inputEl.addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
-
+function suggFixeClick(btn) {
+  var text = btn.textContent;
+  var sugg = document.getElementById('chat-suggestions');
+  if (sugg) sugg.remove();
+  document.getElementById('chat-input').value = text;
+  sendChat();
+}
   async function sendChat() {
     const text = inputEl.value.trim();
     if (!text) return;
