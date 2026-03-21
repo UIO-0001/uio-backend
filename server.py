@@ -132,7 +132,7 @@ def build_system_prompt(client: dict) -> str:
     prompt += (
         f"\n\nLANGUE — RÈGLE ABSOLUE : "
         f"Ta langue par défaut est le {langue}. "
-        "MAIS si le message de l'utilisateur est dans une autre langue (anglais, espagnol, etc.), "
+        "MAIS si le message de l'utilisateur est dans n'importe quelle autre langue, "
         "tu DOIS immédiatement répondre UNIQUEMENT dans cette langue, sans exception. "
         "Ne réponds JAMAIS en français si l'utilisateur t'écrit dans une autre langue. "
         "Détecte la langue du message reçu et réponds toujours dans cette même langue."
