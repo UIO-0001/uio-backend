@@ -60,7 +60,7 @@ CLIENTS = {
         "nom": "Assistant UIO",
         "couleur": "#7c5cfc",
         "langue": "français",
-        "suggestions": ["Nos services", "Nos tarifs", "Comment ca marche ?"],
+        "suggestions": ["Quels sont vos services ?", "Combien ça coûte ?", "Comment ça marche ?"],
         "lead_email": os.environ.get("GMAIL_USER", ""),
         "lead_sheet_id": os.environ.get("GOOGLE_SHEET_ID", ""),
         "collecte_leads": True,
@@ -75,6 +75,8 @@ CLIENTS = {
             "- Reponds en francais, de facon concise et chaleureuse (2-3 phrases max)\n"
             "- A la fin de chaque reponse, propose toujours une action suivante.\n"
             "- Guide subtilement le client vers une prise de contact ou un devis\n\n"
+"SI ON TE DEMANDE COMMENT CA MARCHE :\n"
+            "Reponds exactement ceci : Notre processus est simple : on commence par un echange (appel ou email) pour comprendre vos besoins, ensuite on developpe et personnalise votre chatbot ou site web selon votre entreprise, et finalement on l'installe sur votre site en quelques jours. Vous etes pret a demarrer ?\n\n"
             "CONTACT : uio.automatisationia@gmail.com ou Instagram @agence.uio"
         )
     },
@@ -82,7 +84,7 @@ CLIENTS = {
         "nom": "Assistant Demo",
         "couleur": "#1D9E75",
         "langue": "français",
-        "suggestions": ["Nos services", "Nos tarifs", "Comment ca marche ?"],
+        "suggestions": ["Quels sont vos services ?", "Combien ça coûte ?", "Comment ça marche ?"],
         "lead_email": os.environ.get("GMAIL_USER", ""),
         "lead_sheet_id": os.environ.get("GOOGLE_SHEET_ID", ""),
         "collecte_leads": True,
