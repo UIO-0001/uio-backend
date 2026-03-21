@@ -128,21 +128,23 @@ def build_system_prompt(client: dict) -> str:
     langue = client.get("langue", "français")
     prompt = client["system_prompt"]
 
-    # Instruction de langue — RÈGLE ABSOLUE
-    prompt += (
-        f"\n\nLANGUE — RÈGLE ABSOLUE : "
-        f"Ta langue par défaut est le {langue}. "
-        "MAIS si le message de l'utilisateur est dans n'importe quelle autre langue, "
-        "tu DOIS immédiatement répondre UNIQUEMENT dans cette langue, sans exception. "
-        "Ne réponds JAMAIS en français si l'utilisateur t'écrit dans une autre langue. "
-        "Détecte la langue du message reçu et réponds toujours dans cette même langue."
-    )
-
     if client.get("collecte_leads", False):
         if client.get("prise_rdv", False):
             prompt += "\n\n" + INSTRUCTIONS_COLLECTE_LEADS_AVEC_RDV
         else:
             prompt += "\n\n" + INSTRUCTIONS_COLLECTE_LEADS
+
+    # Instruction de langue en DERNIER pour qu'elle ait priorité
+    prompt += (
+        f"\n\nLANGUE — RÈGLE ABSOLUE ET PRIORITAIRE SUR TOUT : "
+        f"Ta langue par défaut est le {langue}. "
+        "MAIS tu DOIS TOUJOURS détecter la langue du message de l'utilisateur et répondre dans CETTE langue, peu importe laquelle. "
+        "Si l'utilisateur écrit en anglais → réponds en anglais. "
+        "Si l'utilisateur écrit en espagnol → réponds en espagnol. "
+        "Si l'utilisateur écrit en allemand → réponds en allemand. "
+        "Si l'utilisateur écrit en russe → réponds en russe. "
+        "Cette règle est ABSOLUE et écrase toute autre instruction."
+    )
     return prompt
 
 
