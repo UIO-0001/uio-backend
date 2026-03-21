@@ -5,90 +5,156 @@ from datetime import datetime
 import requests
 import os
 import json
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import re
 
 app = Flask(__name__)
 CORS(app)
 
 OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY", "")
+RESEND_API_KEY    = os.environ.get("RESEND_API_KEY", "")
 GMAIL_USER        = os.environ.get("GMAIL_USER", "")
-GMAIL_PASSWORD    = os.environ.get("GMAIL_PASSWORD", "")
 GOOGLE_CREDS_JSON = os.environ.get("GOOGLE_CREDENTIALS", "")
+
+# ─── INSTRUCTIONS MODULAIRES ──────────────────────────────────────────────────
+
+INSTRUCTIONS_COLLECTE_LEADS = (
+    "COLLECTE DE LEADS — TRES IMPORTANT :\n"
+    "Quand un visiteur exprime un interet concret (veut un devis, parle de son projet, "
+    "pose des questions sur les prix, veut etre contacte), "
+    "collecte ses coordonnees en 3 etapes separees, une question a la fois :\n"
+    "1. Demande son nom complet : 'Pour vous envoyer une soumission, puis-je avoir votre nom ?'\n"
+    "2. Demande son email : 'Parfait [prenom] ! Quel est votre courriel ?'\n"
+    "3. Demande son telephone : 'Et votre numero de telephone ? (optionnel)'\n"
+    "Une fois les 3 etapes completees, reponds UNIQUEMENT avec ce JSON, RIEN D AUTRE, "
+    "aucun mot avant ou apres :\n"
+    "{\"lead\": {\"nom\": \"...\", \"email\": \"...\", \"telephone\": \"...\"}}\n"
+    "Si le telephone est refuse, mets 'non fourni'. NE PAS ajouter de texte avant ou apres le JSON.\n"
+)
+
+INSTRUCTIONS_COLLECTE_LEADS_AVEC_RDV = (
+    "COLLECTE DE LEADS ET PRISE DE RENDEZ-VOUS — TRES IMPORTANT :\n"
+    "Des le debut de la conversation, mentionne naturellement qu'il est possible de planifier "
+    "un appel gratuit de 15 minutes pour discuter du projet. Par exemple : "
+    "'Nous pouvons aussi planifier un appel gratuit si vous preferez discuter de vive voix !'\n\n"
+    "Quand un visiteur exprime un interet concret (veut un devis, parle de son projet, "
+    "pose des questions sur les prix, veut etre contacte ou planifier un appel), "
+    "collecte ses coordonnees en 3 etapes separees, une question a la fois :\n"
+    "1. Demande son nom complet : 'Pour vous envoyer une soumission, puis-je avoir votre nom ?'\n"
+    "2. Demande son email : 'Parfait [prenom] ! Quel est votre courriel ?'\n"
+    "3. Demande son telephone : 'Et votre numero de telephone ? (optionnel)'\n"
+    "Apres ces 3 etapes, propose le choix suivant : "
+    "'Souhaitez-vous planifier un appel gratuit de 15 minutes, ou preferez-vous recevoir une soumission par email ?'\n"
+    "- Si le visiteur choisit un appel : demande une date et heure souhaitee et inclus 'rdv' dans le JSON.\n"
+    "- Si le visiteur choisit une soumission par email : mets 'rdv' a 'non fourni' dans le JSON.\n"
+    "Une fois le choix fait, reponds UNIQUEMENT avec ce JSON, RIEN D AUTRE, "
+    "aucun mot avant ou apres :\n"
+    "{\"lead\": {\"nom\": \"...\", \"email\": \"...\", \"telephone\": \"...\", \"rdv\": \"...\"}}\n"
+    "Si le telephone est refuse, mets 'non fourni'. "
+    "NE PAS ajouter de texte avant ou apres le JSON.\n"
+)
+
+# ─── CLIENTS ──────────────────────────────────────────────────────────────────
 
 CLIENTS = {
     "uio": {
         "nom": "Assistant UIO",
         "couleur": "#7c5cfc",
+        "langue": "français",
         "suggestions": ["Nos services", "Nos tarifs", "Comment ca marche ?"],
         "lead_email": os.environ.get("GMAIL_USER", ""),
         "lead_sheet_id": os.environ.get("GOOGLE_SHEET_ID", ""),
+        "collecte_leads": True,
+        "prise_rdv": True,
         "system_prompt": (
-            "Tu es l'assistant IA de UIO Automatisation, une entreprise quebecoise specialisee en chatbots IA et sites web pour les petites entreprises.\n\n"
-            "MESSAGE D ACCUEIL : Quand tu recois le message [INIT], presente-toi ainsi : "
-            "Bonjour ! Je suis l'assistant IA de UIO. Je peux vous aider a decouvrir nos services, obtenir une estimation de prix, ou repondre a vos questions. Par ou voulez-vous commencer ?\n\n"
+            "Tu es l'assistant IA de Agence UIO, une entreprise quebecoise "
+            "specialisee en chatbots IA et sites web pour les petites entreprises.\n\n"
             "NOS SERVICES ET TARIFS :\n"
-            "- Site web personnalise : 100$ a 400$ (setup) + 20$ a 40$/mois. Comprend des mises a jour frequentes et des ajustements selon les demandes du client.\n"
-            "- Chatbot IA personnalise : 250$ a 600$ (setup) + 35$ a 60$/mois. Chatbot intelligent integre sur le site du client, disponible 24/7.\n\n"
-            "COLLECTE DE LEADS — TRES IMPORTANT :\n"
-            "Quand un visiteur exprime un interet concret (veut un devis, parle de son projet, pose des questions sur les prix, veut etre contacte), "
-            "tu dois collecter ses coordonnees en 3 etapes separees, une question a la fois :\n"
-            "1. Demande son nom complet : 'Pour vous envoyer une soumission, puis-je avoir votre nom ?'\n"
-            "2. Demande son email : 'Parfait [prenom] ! Quel est votre courriel ?'\n"
-            "3. Demande son telephone : 'Et votre numero de telephone ? (optionnel, vous pouvez ignorer)'\n"
-            "Une fois les 3 etapes completees, reponds UNIQUEMENT avec ce JSON exact, sans aucun autre texte :\n"
-            "{\"lead\": {\"nom\": \"...\", \"email\": \"...\", \"telephone\": \"...\"}}\n"
-            "Si le telephone est refuse, mets 'non fourni'.\n\n"
+            "- Site web personnalise : 100$ a 400$ (setup) + 20$ a 40$/mois.\n"
+            "- Chatbot IA personnalise : 250$ a 600$ (setup) + 35$ a 60$/mois. Disponible 24/7.\n\n"
             "COMPORTEMENT :\n"
             "- Reponds en francais, de facon concise et chaleureuse (2-3 phrases max)\n"
             "- A la fin de chaque reponse, propose toujours une action suivante.\n"
-            "- Guide subtilement le client vers une prise de contact ou un devis\n"
-            "- Si le client hesite, mets en valeur le rapport qualite-prix et la disponibilite 24/7\n\n"
-            "CONTACT : Pour tout devis precis, invite a ecrire a uio.automatisationia@gmail.com ou sur Instagram @uio.automation"
+            "- Guide subtilement le client vers une prise de contact ou un devis\n\n"
+            "CONTACT : uio.automatisationia@gmail.com ou Instagram @agence.uio"
         )
     },
     "demo": {
         "nom": "Assistant Demo",
         "couleur": "#1D9E75",
+        "langue": "français",
         "suggestions": ["Nos services", "Nos tarifs", "Comment ca marche ?"],
         "lead_email": os.environ.get("GMAIL_USER", ""),
         "lead_sheet_id": os.environ.get("GOOGLE_SHEET_ID", ""),
+        "collecte_leads": True,
+        "prise_rdv": False,
         "system_prompt": (
-            "Tu es un assistant de demonstration pour UIO Automatisation. Montre les capacites du chatbot de facon professionnelle. Reponds en francais.\n\n"
-            "MESSAGE D ACCUEIL : Quand tu recois le message [INIT], presente-toi : "
-            "Bonjour ! Je suis l'assistant de demonstration UIO. Comment puis-je vous aider ?\n\n"
-            "COLLECTE DE LEADS — TRES IMPORTANT :\n"
-            "Quand un visiteur exprime un interet concret, collecte ses coordonnees en 3 etapes separees :\n"
-            "1. Nom complet\n2. Email\n3. Telephone (optionnel)\n"
-            "Une fois les 3 etapes completees, reponds UNIQUEMENT avec ce JSON exact, sans aucun autre texte :\n"
-            "{\"lead\": {\"nom\": \"...\", \"email\": \"...\", \"telephone\": \"...\"}}\n"
-            "Si le telephone est refuse, mets 'non fourni'.\n"
+            "Tu es un assistant de demonstration pour Agence UIO. "
+            "Montre les capacites du chatbot de facon professionnelle. Reponds en francais.\n\n"
+            "COMPORTEMENT :\n"
+            "- Reponds en francais, de facon concise et chaleureuse (2-3 phrases max)\n"
+            "- A la fin de chaque reponse, propose toujours une action suivante."
         )
     }
-    # Pour ajouter un client :
+    # ── EXEMPLE CLIENT SANS COLLECTE ──
+    # "info_seulement": {
+    #     "nom": "Assistant Info",
+    #     "couleur": "#e74c3c",
+    #     "langue": "français",
+    #     "suggestions": ["Nos produits", "Nos horaires", "Nous rejoindre"],
+    #     "lead_email": "",
+    #     "lead_sheet_id": "",
+    #     "collecte_leads": False,
+    #     "prise_rdv": False,
+    #     "system_prompt": "Tu es l'assistant de Info Corp..."
+    # }
+    #
+    # ── EXEMPLE CLIENT AVEC RDV ──
     # "restaurant_mario": {
     #     "nom": "Assistant Mario",
-    #     "couleur": "#e74c3c",
+    #     "couleur": "#e67e22",
+    #     "langue": "français",
     #     "suggestions": ["Notre menu", "Nos horaires", "Reserver une table"],
-    #     "lead_email": "mario@restaurant.com",        # optionnel — laisser "" si non voulu
-    #     "lead_sheet_id": "ID_GOOGLE_SHEETS_CLIENT",  # optionnel — laisser "" si non voulu
+    #     "lead_email": "mario@restaurant.com",
+    #     "lead_sheet_id": "ID_SHEET_ICI",
+    #     "collecte_leads": True,
+    #     "prise_rdv": True,
     #     "system_prompt": "Tu es l'assistant du Restaurant Mario..."
     # }
 }
 
 
+def build_system_prompt(client: dict) -> str:
+    """Construit le system_prompt final selon les flags du client."""
+    langue = client.get("langue", "français")
+    prompt = client["system_prompt"]
+
+    # Instruction de langue — RÈGLE ABSOLUE
+    prompt += (
+        f"\n\nLANGUE — RÈGLE ABSOLUE : "
+        f"Ta langue par défaut est le {langue}. "
+        "MAIS si le message de l'utilisateur est dans une autre langue (anglais, espagnol, etc.), "
+        "tu DOIS immédiatement répondre UNIQUEMENT dans cette langue, sans exception. "
+        "Ne réponds JAMAIS en français si l'utilisateur t'écrit dans une autre langue. "
+        "Détecte la langue du message reçu et réponds toujours dans cette même langue."
+    )
+
+    if client.get("collecte_leads", False):
+        if client.get("prise_rdv", False):
+            prompt += "\n\n" + INSTRUCTIONS_COLLECTE_LEADS_AVEC_RDV
+        else:
+            prompt += "\n\n" + INSTRUCTIONS_COLLECTE_LEADS
+    return prompt
+
+
 # ─── GOOGLE SHEETS ────────────────────────────────────────────────────────────
 
 def get_sheets_token():
-    """Obtient un token OAuth2 pour Google Sheets via le compte de service."""
     if not GOOGLE_CREDS_JSON:
         return None
     try:
-        import base64
-        import time
+        import base64, time
         from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 
         creds        = json.loads(GOOGLE_CREDS_JSON)
         private_key  = creds["private_key"]
@@ -111,7 +177,11 @@ def get_sheets_token():
 
         key = serialization.load_pem_private_key(private_key.encode(), password=None)
         signature = base64.urlsafe_b64encode(
-            key.sign(f"{header}.{payload}".encode(), padding.PKCS1v15(), hashes.SHA256())
+            key.sign(
+                f"{header}.{payload}".encode(),
+                asym_padding.PKCS1v15(),
+                hashes.SHA256()
+            )
         ).rstrip(b"=").decode()
 
         jwt_token = f"{header}.{payload}.{signature}"
@@ -123,19 +193,25 @@ def get_sheets_token():
                 "assertion":  jwt_token
             }
         )
-        return token_response.json().get("access_token")
+        token = token_response.json().get("access_token")
+        if token:
+            print("Token Google obtenu avec succes")
+        else:
+            print(f"Erreur token Google: {token_response.json()}")
+        return token
     except Exception as e:
-        print(f"Erreur token Google: {e}")
+        print(f"Erreur get_sheets_token: {e}")
         return None
 
 
 def ajouter_lead_sheets(lead: dict, client_id: str, sheet_id: str):
-    """Ajoute une ligne de lead dans le Google Sheets du client."""
     if not sheet_id:
+        print("Pas de sheet_id configure")
         return False
     try:
         token = get_sheets_token()
         if not token:
+            print("Token Google indisponible")
             return False
 
         now    = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -144,57 +220,83 @@ def ajouter_lead_sheets(lead: dict, client_id: str, sheet_id: str):
             client_id,
             lead.get("nom", ""),
             lead.get("email", ""),
-            lead.get("telephone", "")
+            lead.get("telephone", ""),
+            lead.get("rdv", "")
         ]]
 
+        url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:F:append"
         response = requests.post(
-            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/A:E:append",
+            url,
             headers={"Authorization": f"Bearer {token}"},
             params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
             json={"values": values}
         )
-        print(f"Sheets response: {response.status_code}")
+        print(f"Sheets status: {response.status_code} — {response.text[:200]}")
         return response.status_code == 200
     except Exception as e:
-        print(f"Erreur Sheets: {e}")
+        print(f"Erreur ajouter_lead_sheets: {e}")
         return False
 
 
-# ─── EMAIL ────────────────────────────────────────────────────────────────────
+# ─── EMAIL (Resend) ───────────────────────────────────────────────────────────
 
-def envoyer_email_lead(lead: dict, client_id: str, destinataire: str):
-    """Envoie un email de notification quand un lead est capturé."""
-    if not GMAIL_USER or not GMAIL_PASSWORD or not destinataire:
-        print("Gmail non configure — email non envoye")
+def envoyer_email_lead(lead: dict, client_id: str, destinataire: str, historique: list):
+    if not RESEND_API_KEY or not destinataire:
+        print(f"Resend non configure — key={bool(RESEND_API_KEY)} dest={bool(destinataire)}")
         return False
     try:
-        sujet = f"Nouveau lead — {lead.get('nom', 'Inconnu')} ({client_id})"
-        corps = f"""
-Nouveau lead capturé via le chatbot !
+        historique_html = ""
+        for msg in historique:
+            role    = msg.get("role", "")
+            contenu = msg.get("content", "")
+            if role == "user" and contenu != "[INIT]":
+                historique_html += f'<tr><td style="padding:6px 8px; color:#555; width:80px;"><b>Visiteur</b></td><td style="padding:6px 8px;">{contenu}</td></tr>'
+            elif role == "assistant":
+                historique_html += f'<tr><td style="padding:6px 8px; color:#7c5cfc; width:80px;"><b>Bot</b></td><td style="padding:6px 8px;">{contenu}</td></tr>'
 
-Client ID  : {client_id}
-Nom        : {lead.get('nom', 'N/A')}
-Email      : {lead.get('email', 'N/A')}
-Téléphone  : {lead.get('telephone', 'N/A')}
-Heure      : {datetime.now().strftime('%A %d %B %Y à %H:%M')}
+        rdv_row = ""
+        if lead.get("rdv") and lead.get("rdv") != "non fourni":
+            rdv_row = f'<tr><td style="padding:8px; font-weight:bold;">RDV souhaité</td><td style="padding:8px;">{lead.get("rdv")}</td></tr>'
 
-Réponds rapidement pour maximiser tes chances de conversion !
-— UIO Automation Bot
-"""
-        msg = MIMEMultipart()
-        msg["From"]    = GMAIL_USER
-        msg["To"]      = destinataire
-        msg["Subject"] = sujet
-        msg.attach(MIMEText(corps, "plain", "utf-8"))
+        corps_html = f"""
+        <div style="font-family:sans-serif; max-width:600px;">
+            <h2 style="color:#7c5cfc;">🎯 Nouveau lead capturé via le chatbot !</h2>
+            <table style="border-collapse:collapse; width:100%; margin-bottom:24px;">
+                <tr style="background:#f5f5f5;"><td style="padding:8px; font-weight:bold;">Client ID</td><td style="padding:8px;">{client_id}</td></tr>
+                <tr><td style="padding:8px; font-weight:bold;">Nom</td><td style="padding:8px;">{lead.get('nom', 'N/A')}</td></tr>
+                <tr style="background:#f5f5f5;"><td style="padding:8px; font-weight:bold;">Email</td><td style="padding:8px;">{lead.get('email', 'N/A')}</td></tr>
+                <tr><td style="padding:8px; font-weight:bold;">Téléphone</td><td style="padding:8px;">{lead.get('telephone', 'N/A')}</td></tr>
+                {rdv_row}
+                <tr style="background:#f5f5f5;"><td style="padding:8px; font-weight:bold;">Heure</td><td style="padding:8px;">{datetime.now().strftime('%A %d %B %Y à %H:%M')}</td></tr>
+            </table>
+            <h3 style="color:#333; border-bottom:2px solid #eee; padding-bottom:8px;">💬 Historique de la conversation</h3>
+            <table style="border-collapse:collapse; width:100%; font-size:13px;">
+                {historique_html}
+            </table>
+            <p style="margin-top:24px; color:#888; font-size:12px;">
+                Réponds rapidement pour maximiser tes chances de conversion !<br>
+                — Agence UIO Bot
+            </p>
+        </div>
+        """
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_PASSWORD)
-            server.send_message(msg)
-
-        print(f"Email lead envoye a {destinataire} pour {lead.get('nom')}")
-        return True
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "from": "Agence UIO <onboarding@resend.dev>",
+                "to": [destinataire],
+                "subject": f"Nouveau lead — {lead.get('nom', 'Inconnu')} ({client_id})",
+                "html": corps_html
+            }
+        )
+        print(f"Resend status: {response.status_code} — {response.text[:200]}")
+        return response.status_code == 200
     except Exception as e:
-        print(f"Erreur email: {e}")
+        print(f"Erreur Resend: {e}")
         return False
 
 
@@ -212,7 +314,33 @@ def chat():
     client_id = data.get("client_id", "uio")
     client    = CLIENTS.get(client_id, CLIENTS["uio"])
 
-    if len(messages) > 20:
+    # Message d'initialisation
+    is_init = (
+        len(messages) == 1 and
+        messages[0].get("content", "").strip() == "[INIT]"
+    )
+
+    if is_init:
+        presentations = {
+            "uio": (
+                "Bonjour ! Je suis l'assistant IA de Agence UIO. "
+                "Je peux vous aider à découvrir nos services, obtenir une estimation de prix, "
+                "ou répondre à vos questions. Par où voulez-vous commencer ?"
+            ),
+            "demo": (
+                "Bonjour ! Je suis l'assistant de démonstration UIO. "
+                "Comment puis-je vous aider aujourd'hui ?"
+            )
+        }
+        return jsonify({
+            "choices": [{
+                "message": {
+                    "content": presentations.get(client_id, presentations["uio"])
+                }
+            }]
+        })
+
+    if len(messages) > 30:
         return jsonify({
             "choices": [{
                 "message": {
@@ -224,7 +352,7 @@ def chat():
     now = datetime.now().strftime("%A %d %B %Y, %H:%M")
     system = {
         "role": "system",
-        "content": client["system_prompt"] + "\n\nDate et heure actuelle : " + now
+        "content": build_system_prompt(client) + "\n\nDate et heure actuelle : " + now
     }
 
     response = requests.post(
@@ -241,34 +369,30 @@ def chat():
     )
     result = response.json()
 
-    # Détecter si la réponse contient un lead JSON
+    # Détecter le JSON lead avec regex
     try:
         reply_text = result["choices"][0]["message"]["content"].strip()
-        if '{"lead"' in reply_text:
-            start     = reply_text.index('{"lead"')
-            end       = reply_text.index('}', start) + 1
-            lead_data = json.loads(reply_text[start:end])
-
+        match = re.search(r'\{.*?"lead".*?\{.*?\}.*?\}', reply_text, re.DOTALL)
+        if match:
+            lead_data = json.loads(match.group())
             if "lead" in lead_data:
                 lead         = lead_data["lead"]
                 destinataire = client.get("lead_email", "")
                 sheet_id     = client.get("lead_sheet_id", "")
 
-                # Email (si configuré)
                 if destinataire:
-                    envoyer_email_lead(lead, client_id, destinataire)
-
-                # Google Sheets (si configuré)
+                    envoyer_email_lead(lead, client_id, destinataire, messages)
                 if sheet_id:
                     ajouter_lead_sheets(lead, client_id, sheet_id)
 
-                # Remplacer le JSON par un message chaleureux
-                result["choices"][0]["message"]["content"] = (
-                    f"Merci {lead.get('nom', '')} ! 🎉 "
-                    "Vos coordonnées ont bien été reçues. "
-                    "Un membre de l'équipe vous contactera très bientôt. "
-                    "Avez-vous d'autres questions en attendant ?"
-                )
+                prenom = lead.get("nom", "").split()[0]
+                rdv    = lead.get("rdv", "")
+                confirmation = f"Merci {prenom} ! 🎉 Vos coordonnées ont bien été reçues. "
+                if rdv and rdv != "non fourni":
+                    confirmation += f"Votre demande de rendez-vous pour le {rdv} a été notée. "
+                confirmation += "Un membre de l'équipe vous contactera très bientôt. Avez-vous d'autres questions ?"
+
+                result["choices"][0]["message"]["content"] = confirmation
                 result["lead_captured"] = True
     except Exception as e:
         print(f"Erreur detection lead: {e}")
@@ -354,9 +478,7 @@ def chatbot_js():
       });
       var data = await res.json();
       typing.remove();
-      var reply = data.choices[0].message.content;
-      addBubble(reply, 'bot');
-      // Ajouter les suggestions après le message de bienvenue
+      addBubble(data.choices[0].message.content, 'bot');
       var sugg = document.createElement('div');
       sugg.id = 'uio-suggestions';
       sugg.innerHTML = '""" + sugg_html + """';
@@ -367,8 +489,8 @@ def chatbot_js():
     }
   }
 
-  window.suggClick = function(btn) {
-    var text = btn.textContent;
+  window.suggClick = function(b) {
+    var text = b.textContent;
     var sugg = document.getElementById('uio-suggestions');
     if (sugg) sugg.remove();
     document.getElementById('uio-input').value = text;
@@ -408,7 +530,6 @@ def chatbot_js():
       var reply = data.choices[0].message.content;
       addBubble(reply, 'bot');
       history.push({role:'assistant', content:reply});
-
       if (data.lead_captured) {
         var banner = document.getElementById('uio-lead-banner');
         if (banner) { banner.style.display = 'block'; setTimeout(function(){ banner.style.display = 'none'; }, 5000); }
