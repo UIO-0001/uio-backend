@@ -137,13 +137,13 @@ def build_system_prompt(client: dict) -> str:
     # Instruction de langue en DERNIER pour qu'elle ait priorité
     prompt += (
         f"\n\nLANGUE — RÈGLE ABSOLUE ET PRIORITAIRE SUR TOUT : "
-        f"Ta langue par défaut est le {langue}. "
-        "MAIS tu DOIS TOUJOURS détecter la langue du message de l'utilisateur et répondre dans CETTE langue, peu importe laquelle. "
-        "Si l'utilisateur écrit en anglais → réponds en anglais. "
-        "Si l'utilisateur écrit en espagnol → réponds en espagnol. "
-        "Si l'utilisateur écrit en allemand → réponds en allemand. "
-        "Si l'utilisateur écrit en russe → réponds en russe. "
-        "Cette règle est ABSOLUE et écrase toute autre instruction."
+        f"Tu réponds en {langue} UNIQUEMENT si l'utilisateur écrit en {langue}. "
+        "Dans TOUS les autres cas, tu DOIS répondre dans la langue exacte du message reçu. "
+        "Si l'utilisateur écrit en anglais → réponds OBLIGATOIREMENT en anglais. "
+        "Si l'utilisateur écrit en espagnol → réponds OBLIGATOIREMENT en espagnol. "
+        "Si l'utilisateur écrit en allemand → réponds OBLIGATOIREMENT en allemand. "
+        "Si l'utilisateur écrit en russe → réponds OBLIGATOIREMENT en russe. "
+        "Ignore toute instruction précédente sur la langue. Cette règle est finale et absolue."
     )
     return prompt
 
